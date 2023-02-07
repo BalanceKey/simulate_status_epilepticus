@@ -9,6 +9,14 @@ from utils import *
 
 plot = False
 
+global_coupling = -3
+m = 0.8
+m_se = 0
+z0 = 2.95029597e+00
+z0_se = 0.9# 0.7#-1#0.9
+dt = 0.006
+
+
 # Data
 subj_proc_dir = '/Users/dollomab/MyProjects/Epinov_trial/patients/sub-314a1ab2525d/'
 data_dir = f'{subj_proc_dir}tvb/'
@@ -42,20 +50,19 @@ if plot:
     img = plt.bar(np.r_[0:con.weights.shape[0]], con.weights[np.where(con.region_labels == reg_name)[0][0]], color='black', alpha=0.3)
     plt.title(f'Connection weights to {reg_name}', fontsize=40)
     plt.xticks(np.r_[:len(con.region_labels)], con.region_labels, rotation = 90)
-    plt.xlabel('Region#', fontsize=30);
+    plt.xlabel('Region#', fontsize=30)
     fig.tight_layout()
 
 # Coupling
-coupl = coupling.Difference(a=np.array([-3])) # -8
+coupl = coupling.Difference(a=np.array([global_coupling])) # -3 # -8
 
 # Integrators
-heunint = integrators.HeunDeterministic(dt=0.01)
+heunint = integrators.HeunDeterministic(dt=dt)
 
 # Monitors Q: How much should the period be ??
-mons = [monitors.TemporalAverage(period=1)]
+mons = [monitors.Raw(),  monitors.TemporalAverage(period=0.5)]
 
 # Initial conditions
-z0 = 2.95029597e+00
 # init_cond = np.array([15.93,  1.228,   z0,  -0.03945, 1.914, -0.2088])
 init_cond = np.array([-1.98742113e+00, -1.87492138e+01,  z0, -1.05214059e+00,
        -4.95543740e-20, -1.98742113e-01])
@@ -64,37 +71,38 @@ init_cond_reshaped = np.repeat(init_cond, nb_regions).reshape((1, len(init_cond)
 
 
 # Epileptor model
-x0ez=-1.4
+x0ez=-1.6
 x0pz=-2.1
 # x0pz2=-2.17
 x0num=-2.2
 
 #epileptors = Epileptor3D(Ks=np.array([-2]), r=np.array([0.0002]), tau = np.array([10]), tt = np.array([0.07]))
 epileptors = models.Epileptor() # Q: What should the parameters be ???
+epileptors.variables_of_interest = ['x2 - x1', 'z', 'x1', 'y1', 'x2']
 epileptors.x0 = x0num*np.ones(nb_regions)
-epileptors.r = np.ones(nb_regions)*0.0035#0.00035
-epileptors.slope = np.ones(nb_regions)*(0)#0
+epileptors.r = np.ones(nb_regions)*0.00035
+epileptors.slope = np.ones(nb_regions)*(m)#0
 epileptors.Iext = np.ones(nb_regions)*(3.1)
 epileptors.Iext2 = np.ones(nb_regions)*(0.45)
 epileptors.Ks = np.ones(nb_regions)*(1.0)
 epileptors.Kf = np.ones(nb_regions)*(1.0)*0.0001# ?
 epileptors.Kvf = np.ones(nb_regions)*(1.0)*0.01# ?
 
-epileptors.state_variable_range['x1'] = np.array([-100, 100])
-epileptors.state_variable_range['y1'] = np.array([-500, 500])
-epileptors.state_variable_range['z'] = np.array([-50, 50])
-epileptors.state_variable_range['x2'] = np.array([-100, 100])
-epileptors.state_variable_range['y2'] = np.array([-200, 200])
-epileptors.state_variable_range['g'] = np.array([-200, 200])
+epileptors.state_variable_range['x1'] = np.array([-1000, 1000])
+epileptors.state_variable_range['y1'] = np.array([-5000, 5000])
+epileptors.state_variable_range['z'] = np.array([-500, 500])
+epileptors.state_variable_range['x2'] = np.array([-1000, 1000])
+epileptors.state_variable_range['y2'] = np.array([-2000, 2000])
+epileptors.state_variable_range['g'] = np.array([-2000, 2000])
 
 EZ = ['Left-Postcentral-gyrus', 'Left-Postcentral-sulcus']
 PZ = ['Left-Supramarginal-posterior', 'Left-Central-sulcus-head-face', 'Left-Precentral-gyrus-upper-limb',
       'Left-Central-sulcus-upper-limb', 'Left-F2-caudal', 'Left-Precentral-gyrus-head-face']
 
-z0_se = -1#0.9
+
 for roi in EZ:
     epileptors.x0[np.where(con.region_labels == roi)[0]] = x0ez
-    epileptors.slope[np.where(con.region_labels == roi)[0]] = -8 # -8
+    epileptors.slope[np.where(con.region_labels == roi)[0]] = m_se # -8
     init_cond_reshaped[0,2,np.where(con.region_labels == roi)[0],0] = z0_se
 for roi in PZ:
     epileptors.x0[np.where(con.region_labels == roi)[0]] = x0pz
@@ -114,14 +122,39 @@ sim.configure()
 
 # Run
 start = time.perf_counter()
-results= sim.run(simulation_length = 3000)#7000)
+results= sim.run(simulation_length = 6000)#7000)
 finish = time.perf_counter()
 print(f'Finished in {round(finish-start, 2)} second(s)')
 
 
-t, tavg = results[0]
-plot_tavg(t[:], tavg[:,:,:,:], sim.connectivity.region_labels, nb_regions)
+(tr, raw), (t, tavg) = results
+plot_tavg(tr[:], raw[:,:,:,:], sim.connectivity.region_labels, nb_regions, normalize=False)
+plot_tavg(t[:], tavg[:,:,:,:], sim.connectivity.region_labels, nb_regions, normalize=True, scaling=2)
 
+save_data = True
+if save_data:
+    np.savez(f'/Users/dollomab/MyProjects/Epinov_trial/simulate_data/simulate_status_epilepticus/simulations/simulation_z0_{z0_se}_m_{m_se}_x0_{x0ez}',
+             t=t, tavg=tavg, z0_se=z0_se, z0=z0, x0ez=x0ez, x0pz=x0pz, x0num=x0num, m_se=m_se,
+             m=m, global_coupling=global_coupling, dt=dt)
+
+plot_variables(t, tavg, con.region_labels, EZ)
+plot_variables(tr, raw, con.region_labels, EZ)
+
+from mpl_toolkits import mplot3d
+fig2 = plt.figure(tight_layout=True)
+ax = plt.axes(projection='3d')
+region_idx = np.where(con.region_labels == EZ[0])[0][0]
+A = tavg[:, 2, region_idx, 0]-tavg[:, 4, region_idx, 0]
+B = tavg[:, 3, region_idx, 0]
+C = tavg[:, 1, region_idx, 0]
+ax.plot3D(A, B, C, lw=0.5)
+ax.grid(False)
+ax.set_xlabel('x1-x2', size=18)
+ax.set_ylabel('y1', size=18)
+ax.set_zlabel('z', size=18)
+#     ax.set_zlim(2, 5)
+# ax.set_title('x0=-1.6, m=0, z0 = '+str(round(x0,3)), size=20)
+plt.show()
 
 
 ####### TODO part 2
@@ -138,44 +171,8 @@ invgain = np.loadtxt(inv_gain_file)
 seeg_xyz = vep_prepare.read_seeg_xyz(subj_proc_dir)
 seeg_xyz_names = [label for label, _ in seeg_xyz]
 
-vhdrname = f"{subj_proc_dir}/ieeg/sub-314a1ab2525d_ses-01_task-seizure_acq-type2_run-01_ieeg.vhdr"
-raw = mne.io.read_raw_brainvision(vhdrname, preload=True)
-raw._data *= 1e6
-
-bip_gain_inv_minus, bip_xyz, bip_name = vep_prepare.bipolarize_gain_minus(invgain, seeg_xyz, seeg_xyz_names)
-
-bip = vep_prepare._bipify_raw(raw)
-gain, bip = vep_prepare.gain_reorder(bip_gain_inv_minus, bip, bip_name)
-
-import pickle
-remove_cerebellar = False
-sstscfname = f"{subj_proc_dir}/tvb/sstsc_Mapping.vep.pickle"
-if not op.isfile(sstscfname):
-    print('>> first time to generate the mapping files which may take longer time than usual')
-    ch_names, prior_gain = vep_prepare.generate_srtss_maps(subj_proc_dir, vhdrname)
-    maping_data_1 = {'ch_names': ch_names, 'prior_Mapping': prior_gain}
-    with open(sstscfname, 'wb') as fd:
-        pickle.dump(maping_data_1, fd)
-
-with open(sstscfname, 'rb') as fdrb:
-    maping_data = pickle.load(fdrb)
-
-bad_ch = []
-for ind_ch, ich in enumerate(maping_data['ch_names']):
-    if ich not in bip.ch_names:
-        bad_ch.append(ind_ch)
-gain_prior = np.delete(maping_data['prior_Mapping'], bad_ch, axis=0)
-
+gain = invgain
 roi = vep_prepare.read_vep_mrtrix_lut()
-if remove_cerebellar:
-    cereb_cortex = ['Left-Cerebellar-cortex','Right-Cerebellar-cortex']
-
-    gain_prior.T[roi.index('Left-Cerebellar-cortex')] = gain_prior.T[-1]*0
-    gain_prior.T[roi.index('Right-Cerebellar-cortex')] = gain_prior.T[-1]*0
-    gain.T[roi.index('Left-Cerebellar-cortex')] = np.ones(np.shape(gain.T[-1]))*np.min(gain)
-    gain.T[roi.index('Right-Cerebellar-cortex')] = np.ones(np.shape(gain.T[-1]))*np.min(gain)
-
-
 
 tavg /= (np.max(tavg, 0) - np.min(tavg, 0))
 tavg -= np.mean(tavg, 0)
@@ -183,7 +180,7 @@ srcSig = tavg[:, 0, :, 0]
 # Map onto SEEG
 seeg = np.dot(gain, srcSig.T)
 
-show_ch = bip.ch_names
+show_ch = seeg_xyz_names
 sfreq = 250.
 nch = [show_ch.index(ichan) for ichan in show_ch]
 nch_sourse = []
@@ -192,20 +189,20 @@ for ind_ch, ichan in enumerate(show_ch):
     isource = roi[np.argmax(gain[ind_ch])]     # TODO FIX THIS LATER !!!! REPLACE BY GAIN PRIOR
     nch_sourse.append(f'{isource}:{ichan}')
 plt.figure(figsize=[40, 70])
-scaleplt = 0.09
+scaleplt = 0.1
 base_length = int(5 * sfreq)
 
 start_idx = 0
-end_idx = 7000
+end_idx = tavg.shape[0]
 
 for ind, ich in enumerate(nch):
-    plt.plot(t[start_idx:end_idx], scaleplt * (seeg[ich, start_idx:end_idx] - seeg[ich, 0]) + ind, 'blue', lw=1)
+    plt.plot(t[start_idx:end_idx], scaleplt * (seeg[ich, start_idx:end_idx] - seeg[ich, 0]) + ind, 'blue', lw=1.5)
 plt.xticks(fontsize=18)
 plt.ylim([-1, len(nch) + 0.5])
 plt.xlim([t[start_idx], t[end_idx - 1]])
 plt.tight_layout()
 # plt.title(f'{pid_bids}:ts_{basicfilename}', fontsize=16)
-plt.yticks(np.arange(len(show_ch)), nch_sourse, fontsize=26);
+plt.yticks(np.arange(len(show_ch)), nch_sourse, fontsize=26)
 plt.gcf().subplots_adjust(left=0.2)
 plt.gcf().subplots_adjust(top=0.97)
 # if save_fig:
