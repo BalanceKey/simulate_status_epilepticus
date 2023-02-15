@@ -9,13 +9,17 @@ from utils import *
 
 plot = False
 
-global_coupling = -3
-m = 0.8
-m_se = 0
+global_coupling = -1.25#-1.4#-1.3#-1.5#-1#-4
+m = 0
+m_se = -8
 z0 = 2.95029597e+00
-z0_se = 0.9# 0.7#-1#0.9
-dt = 0.006
+z0_se = -0.8#-0.5# 0.7#-1#0.9
+dt = 0.01
 
+# x0 values
+x0ez=-1.6
+x0pz=-2.1
+x0num=-2.2
 
 # Data
 subj_proc_dir = '/Users/dollomab/MyProjects/Epinov_trial/patients/sub-314a1ab2525d/'
@@ -41,7 +45,7 @@ if plot:
     plt.imshow(con.weights,norm=plc.LogNorm(vmin=1e-6, vmax=con.weights.max()))
     plt.title(f'Normalized SC (log scale)',fontsize=12, fontweight='bold')
     plt.xticks(np.r_[:len(con.region_labels)], con.region_labels, rotation = 90)
-    plt.yticks(np.r_[:len(con.region_labels)], con.region_labels);
+    plt.yticks(np.r_[:len(con.region_labels)], con.region_labels)
     fig.tight_layout()
     plt.show()
 
@@ -69,18 +73,12 @@ init_cond = np.array([-1.98742113e+00, -1.87492138e+01,  z0, -1.05214059e+00,
 init_cond_reshaped = np.repeat(init_cond, nb_regions).reshape((1, len(init_cond), nb_regions, 1))
 # init_cond_reshaped.shape
 
-
 # Epileptor model
-x0ez=-1.6
-x0pz=-2.1
-# x0pz2=-2.17
-x0num=-2.2
-
 #epileptors = Epileptor3D(Ks=np.array([-2]), r=np.array([0.0002]), tau = np.array([10]), tt = np.array([0.07]))
 epileptors = models.Epileptor() # Q: What should the parameters be ???
 epileptors.variables_of_interest = ['x2 - x1', 'z', 'x1', 'y1', 'x2']
 epileptors.x0 = x0num*np.ones(nb_regions)
-epileptors.r = np.ones(nb_regions)*0.00035
+epileptors.r = np.ones(nb_regions)*0.00015#0.00035
 epileptors.slope = np.ones(nb_regions)*(m)#0
 epileptors.Iext = np.ones(nb_regions)*(3.1)
 epileptors.Iext2 = np.ones(nb_regions)*(0.45)
@@ -107,7 +105,7 @@ for roi in EZ:
 for roi in PZ:
     epileptors.x0[np.where(con.region_labels == roi)[0]] = x0pz
 #     epileptors.slope[np.where(con.region_labels == roi)[0]] = 0
-    init_cond_reshaped[0,2,np.where(con.region_labels == roi)[0],0] = z0_se
+#     init_cond_reshaped[0,2,np.where(con.region_labels == roi)[0],0] = z0_se
 
 
 # Simulator
@@ -128,84 +126,16 @@ print(f'Finished in {round(finish-start, 2)} second(s)')
 
 
 (tr, raw), (t, tavg) = results
-plot_tavg(tr[:], raw[:,:,:,:], sim.connectivity.region_labels, nb_regions, normalize=False)
 plot_tavg(t[:], tavg[:,:,:,:], sim.connectivity.region_labels, nb_regions, normalize=True, scaling=2)
+plot_tavg(tr[:], raw[:,:,:,:], sim.connectivity.region_labels, nb_regions, normalize=True, scaling=2)
+
 
 save_data = True
 if save_data:
-    np.savez(f'/Users/dollomab/MyProjects/Epinov_trial/simulate_data/simulate_status_epilepticus/simulations/simulation_z0_{z0_se}_m_{m_se}_x0_{x0ez}',
+    np.savez(f'/Users/dollomab/MyProjects/Epinov_trial/simulate_data/simulate_status_epilepticus/simulations/simulation_z0_{z0_se}_m_{m_se}_x0_{x0ez}_x0pz_{x0pz}gc_{global_coupling}_almostthere14_PERFECT',
              t=t, tavg=tavg, z0_se=z0_se, z0=z0, x0ez=x0ez, x0pz=x0pz, x0num=x0num, m_se=m_se,
              m=m, global_coupling=global_coupling, dt=dt)
 
 plot_variables(t, tavg, con.region_labels, EZ)
 plot_variables(tr, raw, con.region_labels, EZ)
 
-from mpl_toolkits import mplot3d
-fig2 = plt.figure(tight_layout=True)
-ax = plt.axes(projection='3d')
-region_idx = np.where(con.region_labels == EZ[0])[0][0]
-A = tavg[:, 2, region_idx, 0]-tavg[:, 4, region_idx, 0]
-B = tavg[:, 3, region_idx, 0]
-C = tavg[:, 1, region_idx, 0]
-ax.plot3D(A, B, C, lw=0.5)
-ax.grid(False)
-ax.set_xlabel('x1-x2', size=18)
-ax.set_ylabel('y1', size=18)
-ax.set_zlabel('z', size=18)
-#     ax.set_zlim(2, 5)
-# ax.set_title('x0=-1.6, m=0, z0 = '+str(round(x0,3)), size=20)
-plt.show()
-
-
-####### TODO part 2
-import sys
-import mne
-sys.path.insert(2, '/Users/dollomab/MyProjects/Epinov_trial/vep_run_Trial/fit/')
-import vep_prepare
-
-# read gain
-inv_gain_file = f'{subj_proc_dir}/elec/gain_inv-square.vep.txt'
-invgain = np.loadtxt(inv_gain_file)
-
-# read from GARDEL file
-seeg_xyz = vep_prepare.read_seeg_xyz(subj_proc_dir)
-seeg_xyz_names = [label for label, _ in seeg_xyz]
-
-gain = invgain
-roi = vep_prepare.read_vep_mrtrix_lut()
-
-tavg /= (np.max(tavg, 0) - np.min(tavg, 0))
-tavg -= np.mean(tavg, 0)
-srcSig = tavg[:, 0, :, 0]
-# Map onto SEEG
-seeg = np.dot(gain, srcSig.T)
-
-show_ch = seeg_xyz_names
-sfreq = 250.
-nch = [show_ch.index(ichan) for ichan in show_ch]
-nch_sourse = []
-for ind_ch, ichan in enumerate(show_ch):
-#     isource = roi[np.argmax(gain_prior[ind_ch])] # CORRECT
-    isource = roi[np.argmax(gain[ind_ch])]     # TODO FIX THIS LATER !!!! REPLACE BY GAIN PRIOR
-    nch_sourse.append(f'{isource}:{ichan}')
-plt.figure(figsize=[40, 70])
-scaleplt = 0.1
-base_length = int(5 * sfreq)
-
-start_idx = 0
-end_idx = tavg.shape[0]
-
-for ind, ich in enumerate(nch):
-    plt.plot(t[start_idx:end_idx], scaleplt * (seeg[ich, start_idx:end_idx] - seeg[ich, 0]) + ind, 'blue', lw=1.5)
-plt.xticks(fontsize=18)
-plt.ylim([-1, len(nch) + 0.5])
-plt.xlim([t[start_idx], t[end_idx - 1]])
-plt.tight_layout()
-# plt.title(f'{pid_bids}:ts_{basicfilename}', fontsize=16)
-plt.yticks(np.arange(len(show_ch)), nch_sourse, fontsize=26)
-plt.gcf().subplots_adjust(left=0.2)
-plt.gcf().subplots_adjust(top=0.97)
-# if save_fig:
-#     print('>> Save', f'{save_img}/{pid_bids}_simulated_sensor_timeseries_run-0{run}.png')
-#     plt.savefig(f'{save_img}/{pid_bids}_simulated_sensor_timeseries_run-0{run}.png')
-plt.show()
