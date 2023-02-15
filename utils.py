@@ -54,3 +54,60 @@ def plot_variables(t, tavg, region_labels, EZ):
         axs[1].set_ylabel('z')
     plt.tight_layout()
     plt.show()
+
+def circular_connectivity(con):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from mne.viz import circular_layout
+    from mne_connectivity.viz import plot_connectivity_circle
+
+    def rgb2hex(r, g, b):
+        return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+    fname = '/Users/dollomab/OtherProjects/epi_visualisation/util/VepMrtrixLut.txt'
+    label_colors = []
+    with open(fname, 'r') as fd:
+        for line in fd.readlines():
+            #         print(line.strip().split())
+            i, roi_name, r, g, b, _ = line.strip().split()
+            #         print(r,g,b)
+            label_colors.append(rgb2hex(int(r), int(g), int(b)))
+    label_colors = label_colors[1:]
+
+    # First, we reorder the labels based on their location in the left hemi
+    label_names = [label for label in con.region_labels]
+    label_centres = con.centres
+    # label_colors = [label.color for label in labels]
+
+    lh_labels = [name for name in label_names if name.startswith('Left')]
+
+    # Get the y-location of the label
+    # label_ypos = list()
+    # for name in lh_labels:
+    #     idx = label_names.index(name)
+    #     ypos = label_centres[idx][1]#np.mean(labels[idx].pos[:, 1])
+    #     label_ypos.append(ypos)
+
+    # Reorder the labels based on their location
+    # lh_labels = [label for (yp, label) in sorted(zip(label_ypos, lh_labels))]
+
+    # For the right hemi
+    rh_labels = [name for name in label_names if name.startswith('Right')]
+
+    # Save the plot order and create a circular layout
+    node_order = list()
+    node_order.extend(lh_labels[::-1])  # reverse the order
+    node_order.extend(rh_labels)
+
+    node_angles = circular_layout(label_names, node_order, start_pos=90,
+                                  group_boundaries=[0, len(label_names) / 2])
+
+    # Plot the graph using node colors from the FreeSurfer parcellation. We only
+    # show the 300 strongest connections.
+    fig, ax = plt.subplots(figsize=(13, 13), facecolor='black',
+                           subplot_kw=dict(polar=True))
+    plot_connectivity_circle(con.weights, label_names, n_lines=300,
+                             node_angles=node_angles, node_colors=label_colors,
+                             title='Connectivity matrix', ax=ax)
+    fig.tight_layout()
+    # fig.savefig(f'{subj_proc_dir}/conn_lh_rh.pdf', facecolor=fig.get_facecolor())
